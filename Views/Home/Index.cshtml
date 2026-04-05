@@ -1,0 +1,281 @@
+@model ChatbotMVC.Models.ChatViewModel
+@{ ViewData["Title"] = "ChatbotSQL"; }
+
+<div class="app-shell">
+
+  <!-- ═══════════ SIDEBAR ═══════════ -->
+  <aside class="sidebar">
+
+    <div class="sidebar-header">
+      <div class="logo">
+        <span class="logo-icon">🤖</span>
+        <div>
+          <span class="logo-title">ChatbotSQL</span>
+          <span class="logo-sub">Powered by Gemini</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- BD conectada -->
+    <div class="sidebar-section">
+      <div class="section-label">Base de datos</div>
+      <div class="db-card">
+        <span class="db-icon">🗄️</span>
+        <div>
+          <div class="db-name">@Model.DbName</div>
+          <div class="db-meta">SQL Server · @Model.Tables.Count tabla(s)</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Estado Gemini -->
+    <div class="sidebar-section">
+      <div class="section-label">Estado IA</div>
+      <div id="gemini-status" class="status-card @(Model.GeminiReady ? "status-ok" : "status-warn")">
+        <span class="status-dot"></span>
+        <div>
+          <div class="status-title">@(Model.GeminiReady ? "Gemini Activo" : "Sin configurar")</div>
+          <div class="status-model" id="model-name">@(Model.GeminiReady ? Model.ModelName : "—")</div>
+        </div>
+      </div>
+    </div>
+
+    @if (!Model.GeminiReady)
+    {
+      <div class="sidebar-section" id="apikey-section">
+        <div class="section-label">API Key Google AI</div>
+        <input type="password" id="apikey-input" placeholder="AIzaSy..." class="input-field" />
+        <button onclick="initGemini()" class="btn-primary btn-full" style="margin-top:8px">Conectar</button>
+      </div>
+    }
+
+    <!-- Schema dinámico de la BD conectada -->
+    <div class="sidebar-section schema-section">
+      <div class="section-label">Tablas detectadas</div>
+      <div class="schema-list">
+        @foreach (var table in Model.Tables)
+        {
+          <div class="schema-table">
+            <div class="schema-table-header">
+              <span class="table-name">@table.Name</span>
+              <span class="table-count">@table.RowCount filas</span>
+            </div>
+            <div class="schema-columns">
+              @foreach (var col in table.Columns)
+              {
+                <span class="col-badge @(col.IsPK ? "col-pk" : "") @(col.FkTable != null ? "col-fk" : "")"
+                      title="@col.DataType@(col.FkTable != null ? $" → {col.FkTable}" : "")">
+                  @col.Name
+                </span>
+              }
+            </div>
+          </div>
+        }
+      </div>
+    </div>
+
+  </aside>
+
+  <!-- ═══════════ CHAT ═══════════ -->
+  <main class="chat-area">
+
+    <header class="chat-header">
+      <div>
+        <h1>Asistente de Base de Datos</h1>
+        <p>Pregunta en español sobre <strong>@Model.DbName</strong> — el schema se adapta automáticamente</p>
+      </div>
+      <button onclick="clearChat()" class="btn-ghost">🗑️ Limpiar</button>
+    </header>
+
+    <div class="messages-container" id="messages">
+      <div class="message bot-message">
+        <div class="msg-avatar">🤖</div>
+        <div class="msg-content">
+          <div class="msg-bubble">
+            <p>Conectado a <strong>@Model.DbName</strong> con <strong>@Model.Tables.Count tabla(s)</strong> detectada(s).</p>
+            <p>Puedes preguntarme cualquier cosa sobre los datos y generaré el SQL automáticamente.</p>
+            @if (!Model.GeminiReady)
+            {
+              <p>⚠️ Ingresa tu <strong>API Key de Google AI</strong> en el panel izquierdo para empezar.</p>
+            }
+            else
+            {
+              <p>✅ Listo. Escribe tu pregunta abajo.</p>
+            }
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="input-area">
+      <div id="typing-indicator" class="typing-indicator" style="display:none">
+        <span></span><span></span><span></span>
+        <em>Generando consulta...</em>
+      </div>
+      <div class="input-row">
+        <textarea id="question-input" class="question-textarea" rows="1"
+                  placeholder="Ej: ¿Cuántos registros hay en cada tabla?"
+                  onkeydown="handleKey(event)" oninput="autoResize(this)"></textarea>
+        <button id="send-btn" onclick="sendQuestion()" class="btn-send" @(!Model.GeminiReady ? "disabled" : "")>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="22" y1="2" x2="11" y2="13"></line>
+            <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+          </svg>
+        </button>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+@section Scripts {
+<script>
+let geminiReady = @(Model.GeminiReady ? "true" : "false");
+
+async function initGemini() {
+    const key = document.getElementById('apikey-input')?.value?.trim();
+    if (!key) { showNotif('Ingresa tu API Key.', 'warn'); return; }
+    showNotif('Conectando...', 'info');
+    const res  = await fetch('/Home/Initialize', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({apiKey:key}) });
+    const data = await res.json();
+    if (data.success) {
+        geminiReady = true;
+        document.getElementById('gemini-status').className = 'status-card status-ok';
+        document.getElementById('gemini-status').querySelector('.status-title').textContent = 'Gemini Activo';
+        document.getElementById('model-name').textContent = data.model;
+        document.getElementById('apikey-section')?.remove();
+        document.getElementById('send-btn').disabled = false;
+        showNotif(`✅ ${data.model}`, 'ok');
+    } else {
+        showNotif(`❌ ${data.error}`, 'error');
+    }
+}
+
+async function sendQuestion() {
+    const input = document.getElementById('question-input');
+    const q = input.value.trim();
+    if (!q) return;
+    const apiKey = document.getElementById('apikey-input')?.value?.trim() ?? '';
+    addUserMessage(q);
+    input.value = ''; autoResize(input);
+    setLoading(true);
+    try {
+        const res  = await fetch('/Home/Ask', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({question:q, apiKey}) });
+        const data = await res.json();
+        renderBotResponse(data);
+    } catch(e) {
+        addBotMsg(`❌ Error de red: ${e.message}`);
+    } finally {
+        setLoading(false);
+    }
+}
+
+function renderBotResponse(data) {
+    const c = document.getElementById('messages');
+    const now = new Date().toLocaleTimeString('es-PE',{hour:'2-digit',minute:'2-digit'});
+    const wrap = document.createElement('div');
+    wrap.className = 'message bot-message';
+    let html = `<div class="msg-avatar">🤖</div><div class="msg-content">`;
+
+    if (data.sql) {
+        html += `<div class="sql-block">
+            <button class="sql-toggle" onclick="toggleSql(this)">
+                <span>▶</span> SQL generado <em>${esc(data.sqlExpl??'')}</em>
+            </button>
+            <pre class="sql-code" style="display:none">${esc(data.sql)}</pre>
+        </div>`;
+    }
+
+    if (data.table?.columns?.length) html += buildTable(data.table);
+
+    html += `<div class="msg-bubble">${fmt(data.answer)}</div>`;
+    html += `<span class="msg-time">${now}</span></div>`;
+    wrap.innerHTML = html;
+    c.appendChild(wrap);
+    scrollBottom();
+}
+
+function buildTable(t) {
+    const MAX = 20;
+    let h = `<div class="result-table-wrap"><div class="table-meta">📊 ${t.rowCount} fila(s)</div><div class="table-scroll"><table class="result-table">`;
+    h += `<thead><tr>${t.columns.map(c=>`<th>${esc(c)}</th>`).join('')}</tr></thead><tbody>`;
+    t.rows.slice(0,MAX).forEach(r => {
+        h += `<tr>${t.columns.map(c=>`<td>${esc(r[c]??'')}</td>`).join('')}</tr>`;
+    });
+    if (t.rowCount > MAX) h += `<tr><td colspan="${t.columns.length}" class="table-more">... y ${t.rowCount-MAX} más</td></tr>`;
+    return h + `</tbody></table></div></div>`;
+}
+
+function addUserMessage(text) {
+    const c = document.getElementById('messages');
+    const now = new Date().toLocaleTimeString('es-PE',{hour:'2-digit',minute:'2-digit'});
+    c.insertAdjacentHTML('beforeend',`
+        <div class="message user-message">
+            <div class="msg-content">
+                <div class="msg-bubble">${esc(text)}</div>
+                <span class="msg-time">${now}</span>
+            </div>
+            <div class="msg-avatar user-avatar">👤</div>
+        </div>`);
+    scrollBottom();
+}
+
+function addBotMsg(html) {
+    document.getElementById('messages').insertAdjacentHTML('beforeend',`
+        <div class="message bot-message">
+            <div class="msg-avatar">🤖</div>
+            <div class="msg-content"><div class="msg-bubble">${html}</div></div>
+        </div>`);
+    scrollBottom();
+}
+
+function clearChat() {
+    document.getElementById('messages').innerHTML = '';
+    addBotMsg('Chat limpiado. ¡Escribe tu pregunta!');
+}
+
+function toggleSql(btn) {
+    const pre = btn.nextElementSibling;
+    const open = pre.style.display === 'none';
+    pre.style.display = open ? 'block' : 'none';
+    btn.querySelector('span').textContent = open ? '▼' : '▶';
+}
+
+function setLoading(on) {
+    document.getElementById('typing-indicator').style.display = on ? 'flex' : 'none';
+    document.getElementById('send-btn').disabled = on || !geminiReady;
+    if (on) scrollBottom();
+}
+
+function scrollBottom() {
+    const c = document.getElementById('messages');
+    setTimeout(() => c.scrollTop = c.scrollHeight, 50);
+}
+
+function autoResize(el) {
+    el.style.height = 'auto';
+    el.style.height = Math.min(el.scrollHeight, 160) + 'px';
+}
+
+function handleKey(e) {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendQuestion(); }
+}
+
+function esc(s) {
+    return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function fmt(text) {
+    return esc(text).replace(/\*\*(.*?)\*\*/g,'<strong>$1</strong>').replace(/\n/g,'<br>');
+}
+
+function showNotif(msg, type='info') {
+    const n = document.createElement('div');
+    n.className = `notif notif-${type}`;
+    n.textContent = msg;
+    document.body.appendChild(n);
+    setTimeout(() => n.classList.add('notif-show'), 10);
+    setTimeout(() => { n.classList.remove('notif-show'); setTimeout(() => n.remove(), 300); }, 3500);
+}
+</script>
+}
