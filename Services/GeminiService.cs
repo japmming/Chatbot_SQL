@@ -23,16 +23,31 @@ public class GeminiService
         _http = factory.CreateClient();
         _config = config;
         _logger = logger;
+
+        // Lee la clave automáticamente desde appsettings, User Secrets o Variables de Entorno
+        _apiKey = _config["Gemini:ApiKey"] ?? "";
     }
 
-    public async Task<string> InitializeAsync(string apiKey)
+    public async Task<string> InitializeAsync(string? explicitApiKey = null)
     {
-        _apiKey = apiKey;
+        // 1. Si nos pasaron una clave desde la UI, la asignamos
+        if (!string.IsNullOrWhiteSpace(explicitApiKey))
+        {
+            _apiKey = explicitApiKey;
+        }
+
+        // 2. Si no hay clave en ningún lado, disparamos el error
+        if (string.IsNullOrWhiteSpace(_apiKey) || _apiKey == "TU_API_KEY_AQUI")
+        {
+            throw new Exception("La API Key de Gemini no está configurada en el backend ni fue ingresada en la UI.");
+        }
+
         _model = await DetectModelAsync();
         _ready = true;
         _logger.LogInformation("Gemini listo. Modelo: {Model}", _model);
         return _model;
     }
+
 
     // ── Paso 1: generar SQL ──────────────────────────────────────────────
 

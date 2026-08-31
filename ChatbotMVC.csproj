@@ -5,6 +5,7 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <RootNamespace>ChatbotMVC</RootNamespace>
+    <UserSecretsId>00a0e099-dc38-45fe-9b36-40fd4519efae</UserSecretsId>
   </PropertyGroup>
 
   <ItemGroup>

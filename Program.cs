@@ -5,8 +5,13 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddControllersWithViews();
 builder.Services.AddHttpClient();
+
 builder.Services.AddSingleton<DatabaseService>();
-builder.Services.AddSingleton<GeminiService>();
+
+// 1. CAMBIO IMPORTANTE: Registramos GeminiService como Scoped o Transient.
+// Como maneja un HttpClient interno y estados de inicialización por petición,
+// no debe ser Singleton en aplicaciones web para evitar colisiones entre usuarios.
+builder.Services.AddScoped<GeminiService>();
 builder.Services.AddScoped<ChatbotService>();
 
 var app = builder.Build();
@@ -29,12 +34,9 @@ using (var scope = app.Services.CreateScope())
     var db = scope.ServiceProvider.GetRequiredService<DatabaseService>();
     await db.InitializeAsync();   // Solo verifica conexión y lee el nombre de la BD
 
-    // Gemini: inicializar si hay API Key en config
-    var gemini = scope.ServiceProvider.GetRequiredService<GeminiService>();
-    var apiKey = builder.Configuration["Gemini:ApiKey"]
-              ?? Environment.GetEnvironmentVariable("GEMINI_API_KEY") ?? "";
-    if (!string.IsNullOrWhiteSpace(apiKey))
-        await gemini.InitializeAsync(apiKey);
+    // 2. SIMPLIFICACIÓN: Eliminamos la extracción manual de variables aquí.
+    // El controlador se encargará de inicializar el servicio de forma limpia 
+    // en cada petición HTTP (a través de la inyección en el HomeController).
 }
 
 app.Run();
