@@ -24,8 +24,15 @@ public class HomeController : Controller
         // Intenta inicializar automáticamente si la clave existe en el backend
         if (!_gemini.IsReady)
         {
-            try { await _gemini.InitializeAsync(); }
-            catch { /* Silencioso: si no está configurada, la UI pedirá la clave como antes */ }
+            try
+            {
+                await _gemini.InitializeAsync();
+            }
+            catch (Exception ex)
+            {
+                // Esto imprimirá el error real en la consola de Visual Studio (Output/Salida)
+                System.Diagnostics.Debug.WriteLine($"🔴 ERROR DE INITIALIZE: {ex.Message}");
+            }
         }
 
         var vm = new ChatViewModel
